@@ -99,7 +99,7 @@ async function viewRoles() {
   promptUser();
 };
 
-async function viewEmployees() {
+async function viewEmployees() { //this sql JOIN was a doozy but so beautiful when the  table join finally happened the way I needed them to. Also Concatenated the employee names and manager names which looks so much better.
   const res = await query("SELECT employee.id, CONCAT(employee.first_name,' ', employee.last_name) AS employee_name, role.title, department.department_name, role.salary, CONCAT(manager.first_name, ' ', manager.last_name) AS manager_name FROM employee INNER JOIN role ON employee.role_id = role.id INNER JOIN department ON role.department_id = department.id LEFT JOIN employee AS manager ON employee.manager_id = manager.id");
   const allEmployees = [];
   console.log('----------------------------------');
@@ -122,7 +122,7 @@ async function addDepartment() {
 
   await query('INSERT INTO department SET ?', { department_name: answer.department_name });
   console.log('Success! A new department has been added');
-  viewDepartments();
+  promptUser();
 
 };
 
@@ -161,13 +161,20 @@ async function addRole() {
     department_id: selectedDepartment.id
   };
   await query('INSERT INTO role SET ?', roleData);
-  console.log('Success! A new role has been added.')
-  viewRoles();
+  console.log('Success! A new role has been added.');
+  promptUser();
 };
 
 async function addEmployee() {
   const roles = await query('SELECT role.id, role.title, role.salary, department.department_name FROM role RIGHT JOIN department ON role.department_id = department.id');
   const roleChoice = roles.map(role => role.role_title);
+
+  const managers = await query('SELECT DISTINCT employee.id, CONCAT(employee.first_name, " ", employee.last_name) AS full_name FROM employee WHERE employee.id IN (SELECT DISTINCT manager_id FROM employee WHERE manager_id IS NOT NULL)');
+  const managerChoice = managers.map(manager => manager.full_name);
+  console.log('managerChoice:', managerChoice);
+  
+
+
   const answerRole = await inquirer.prompt([
     {
       name: 'first_name',
@@ -176,30 +183,30 @@ async function addEmployee() {
     },
     {
       name: 'last_name',
-      input: 'input',
+      type: 'input',
       message: `What is the employee's last name?`,
     },
     {
       name: 'title',
-      input: 'list',
+      type: 'list',
       message: `What is the employee's role?`,
       choices: roleChoice
     },
-    {
+    {//This is where my application breaks. I have tried debugging but Im still getting the same error which suggests that inquirer is seeing the value as undefined. But I've console.log the managerChoice and verified that it returns the 3 managers names in a string. Not sure what else I can do to address it.
       name: 'manager',
-      input: 'list',
+      type: 'list',
       message: `Who is the employee's manager?`,
-      choices: ['None', ...managerChoices],
+      choices: [{name: 'None'}, ...managerChoice],
     },
 
   ]);
 
-  const selectedRole = roles.find(role => role.title === answer.role);
+  const selectedRole = roles.find(role => role.title === answerRole.title);
   const roleId = selectedRole.id;
 
   let managerId = null;
   if (answer.manager !== 'None') {
-    const selectedManager = managers.find(manager => manager.manager_name === answer.manager);
+    const selectedManager = managers.find(manager => manager.full_name === answerRole.manager);
     managerId = selectedManager.id;
   }
   const employeeData = {
@@ -209,8 +216,8 @@ async function addEmployee() {
     manager_id: managerId
   };
   await query('INSERT INTO employee SET ?', employeeData);
-  console.log(`Success! A new employee has been added.`);
-  viewEmployees();
+  console.log('Success! The new employee ${answerRole.first_name } ${answerRole.last_name} has been added to the database.');
+  promptUser();
 
 };
 
@@ -253,7 +260,7 @@ async function updateRole() {
 
   await query('UPDATE employee SET role_id = ? WHERE id = ?', [newRoleId, employeeId]);
   console.log('Success! Employee role has been updated.');
-  viewEmployees();
+  promptUser();
 
 
 };
