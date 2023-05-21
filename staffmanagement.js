@@ -3,8 +3,9 @@ const express = require('express');
 const mysql = require('mysql2');
 const inquirer = require('inquirer');
 const cTable = require('console.table');
-require ('dotenv').config();
+require('dotenv').config();
 // const chalk = require('chalk');
+//thought this would be fun but couldn't get it to work
 const util = require('util');
 //server connection
 const PORT = process.env.PORT || 3001;
@@ -20,7 +21,7 @@ const db = mysql.createConnection({
   database: process.env.DB_NAME,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
- 
+
 });
 
 db.connect(err => {
@@ -111,30 +112,33 @@ async function viewEmployees() {
 };
 
 async function addDepartment() {
+ 
   const answer = await inquirer.prompt({
     name: 'department_name',
     type: 'input',
-    message: 'Department Name:'
+    message: 'What is the name of the department?',
+
   });
 
   await query('INSERT INTO department SET ?', { department_name: answer.department_name });
-  console.log(chalk.bold.bgCyan('New Department Added'))
+  console.log('Success! A new department has been added');
   viewDepartments();
 
 };
 
 async function addRole() {
-  const res = await query('SELECT * FROM department');
+  const departments = await query('SELECT * FROM department');
+  const departmentChoice = departments.map(department => department.department_name);
   const answer = await inquirer.prompt([
     {
       name: 'role',
       type: 'input',
-      message: 'Role Name:'
+      message: 'What is the name of the role?'
     },
     {
       name: 'salary',
-      input: 'input',
-      message: 'Salary:',
+      type: 'input',
+      message: 'What is the salary of the role?',
       validate: value => {
         if (isNaN(value) === false) return true;
         return false;
@@ -142,137 +146,122 @@ async function addRole() {
     },
     {
       name: 'department_name',
-      input: 'list',
-      message: 'Department:',
-      choices: () => {
-        const departments = [];
-        for (let i of res) {
-          departments.push(i.department_name);
-        }
-        return departments;
-      }
-    }
-
-  ])
+      type: 'list',
+      message: 'Which department does the role belong to?',
+      choices: departmentChoice
+    },
+  ]);
 
 
-  let departmentId;
-  for (let i of res) {
-    if (i.name === answer.departments) {
-      department_id = i.id;
-    }
-  }
-  await query('INSERT INTO role SET ?', { title: answer.role, salary: answer.salary, department_id: department_id });
-  console.log(chalk.bold.bgCyan('New Role Added'))
+  const selectedDepartment = departments.find(department => department.department_name === answer.department_name);
+
+  const roleData = {
+    title: answer.role,
+    salary: answer.salary,
+    department_id: selectedDepartment.id
+  };
+  await query('INSERT INTO role SET ?', roleData);
+  console.log('Success! A new role has been added.')
   viewRoles();
 };
 
 async function addEmployee() {
-  const resRole = await query('SELECT * FROM role');
+  const roles = await query('SELECT role.id, role.title, role.salary, department.department_name FROM role RIGHT JOIN department ON role.department_id = department.id');
+  const roleChoice = roles.map(role => role.role_title);
   const answerRole = await inquirer.prompt([
     {
       name: 'first_name',
       type: 'input',
-      message: 'First Name:'
+      message: `What is the employee's first name?`,
     },
     {
       name: 'last_name',
       input: 'input',
-      message: 'Last Name:',
+      message: `What is the employee's last name?`,
     },
     {
-      name: 'role',
+      name: 'title',
       input: 'list',
-      message: 'Role:',
-      choices: () => {
-        const roles = [];
-        for (let i of resRole) {
-          departments.push(i.title);
-        }
-        return roles;
-      }
-    }
+      message: `What is the employee's role?`,
+      choices: roleChoice
+    },
+    {
+      name: 'manager',
+      input: 'list',
+      message: `Who is the employee's manager?`,
+      choices: ['None', ...managerChoices],
+    },
 
   ]);
 
-  const resEmployee = await  query('SELECT employee.id, CONCAT(employee.first_name, " ", employee.last_name), AS employee_name, employee.role_id, employee.manager_id, FROM employee');
-  const answerEmployee = await inquirer.prompt({
-    
-      name: 'employee',
-      input: 'list',
-      message: 'Manager:',
-      choices: () => {
-        const names = ['None'];
-        for (let i of resEmployee) {
-          names.push(i.employee_name);
-        }
-        return names;
-      }
-    });
-    let roleId;
-    for (let i of resRole) {
-      if (i.title === answerRes.role) {
-        roleId = i.id;
-      }
-    }
-    let managerId;
-    for (let i of resEmployee) {
-      if (i.employee_name === answerEmployee.employee) {
-        managerId = i.id;
-      }
-    }
-    await query('INSERT INTO employee SET ?', { firstName: answerRole.firstName, lastName: answerRole.lastName, roleId, managerId: managerId});
-    console.log(chalk.bold.bgCyan('New Employee Added.'));
-    viewEmployees();
+  const selectedRole = roles.find(role => role.title === answer.role);
+  const roleId = selectedRole.id;
 
-  };
-
-  async function updateRole() {
-    const resEmployee = await query('SELECT employee.id, CONCAT(employee.firstName, "" employee.lastName) AS employeeName, employee.roleId, employee.manager.Id FROM employee');
-    const answerEmployee = await inquirer.prompt ({
-      name: 'employee',
-      input: 'list',
-      message: 'Employee to Update:',
-      choices: () => {
-        const names = [];
-        for (let i of resEmployee) {
-          names.push(i.employeeName);
-        }
-        return names;
-      }
-    });
-    const resRole = await query('SELECT * FROM role');
-    const answerRole = await inquirer.prompt({
-      name: 'role',
-      input: 'list',
-      message: 'New Role:',
-      choices: () => {
-        const roles = [];
-        for (let i of resRole) {
-          roles.push(i.title);
-        }
-        return roles;
-      }
-
-    });
-    const select = await query('SELECT employee.id, CONCAT(employee.firstName, "", employee.lastName) AS employeeName, employee.roleId, role.title FROM employee INNER JOIN role ON employee.role.Id = role.id');
-    let employeeId;
-    for (let i of select) {
-      if (i.employeeName === answerEmployee.employee) {
-        employeeId = i.id;
-      }
-    }
-    let newRoleId;
-    for (let i of resRole) {
-      if (i.title === answerRole.role) {
-        newRoleId = i.id;
-    
-      }
-    }
-    await query('UPDATE employee SET roleId = ? WHERE id = ?', [newRoleId, employeeId]);
-    console.log(chalk.bold.bgCyan('Role Was Updated'));
-    viewEmployees();
+  let managerId = null;
+  if (answer.manager !== 'None') {
+    const selectedManager = managers.find(manager => manager.manager_name === answer.manager);
+    managerId = selectedManager.id;
   }
-  
+  const employeeData = {
+    first_name: answer.first_name,
+    last_name: answer.last_name,
+    role_id: roleId,
+    manager_id: managerId
+  };
+  await query('INSERT INTO employee SET ?', employeeData);
+  console.log(`Success! A new employee has been added.`);
+  viewEmployees();
 
-// call the prompt function to initiate questions
+};
+
+async function updateRole() {
+  const resEmployee = await query('SELECT employee.id, CONCAT(employee.first_name, " ", employee.last_name) AS employeeName, employee.role_id FROM employee');
+  const answerEmployee = await inquirer.prompt({
+    name: 'employee',
+    type: 'list',
+    message: `Which employee's role would you like to update`,
+    choices: () => {
+      const names = [];
+      for (let i of resEmployee) {
+        names.push(i.employeeName);
+      }
+      return names;
+    }
+
+
+  });
+
+  const resRole = await query('SELECT * FROM role');
+  const answerRole = await inquirer.prompt({
+    name: 'role',
+    type: 'list',
+    message: 'Which role do you want to assign the selected employee?',
+    choices: () => {
+      const roles = [];
+      for (let i of resRole) {
+        roles.push(i.title);
+      }
+      return roles;
+    }
+  });
+
+  const selectedEmployee = resEmployee.find(employee => employee.employeeName === answerEmployee.employee);
+  const employeeId = selectedEmployee.id;
+
+  const selectedRole = resRole.find(role => role.title === answerRole.role);
+  const newRoleId = selectedRole.id;
+
+  await query('UPDATE employee SET role_id = ? WHERE id = ?', [newRoleId, employeeId]);
+  console.log('Success! Employee role has been updated.');
+  viewEmployees();
+
+
+};
+
+async function quit() {
+  console.log('Goodbye');
+  process.exit();
+  
+};
+
+
