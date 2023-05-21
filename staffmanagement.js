@@ -3,7 +3,8 @@ const express = require('express');
 const mysql = require('mysql2');
 const inquirer = require('inquirer');
 const cTable = require('console.table');
-const chalk = require('chalk');
+require ('dotenv').config();
+// const chalk = require('chalk');
 const util = require('util');
 //server connection
 const PORT = process.env.PORT || 3001;
@@ -14,23 +15,22 @@ app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
 
 // Connect to database
-const db = mysql.createConnection(
-  {
-    host: 'localhost',
-    // MySQL Username
-    user: 'root',
-    // TODO: Add MySQL Password
-    password: '',
-    database: 'employee_db'
-  });
-connection.connect(err => {
+const db = mysql.createConnection({
+  host: 'localhost',
+  database: process.env.DB_NAME,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+ 
+});
+
+db.connect(err => {
   if (err) throw err;
   console.log('----------------------------------');
   promptUser();
 });
 
 
-const query = util.promisify(connection.query).bind(connection);
+const query = util.promisify(db.query).bind(db);
 
 //Inquirer prompts Module 12-24
 async function promptUser() {
@@ -78,7 +78,7 @@ async function viewDepartments() {
   console.log('----------------------------------');
 
   for (let i of res) {
-    allDepartments.push({ ID: i.id, NAME: i.name });
+    allDepartments.push({ ID: i.id, NAME: i.department_name });
   }
   console.table(allDepartments);
   promptUser();
@@ -87,24 +87,24 @@ async function viewDepartments() {
 };
 
 async function viewRoles() {
-  const res = await query('SELECT role.id, role.salary, department.name FROM role INNER JOIN department ON role.department = department.id');
+  const res = await query('SELECT role.id, role.title, role.salary, department.department_name FROM role RIGHT JOIN department ON role.department_id = department.id');
   const allRoles = [];
   console.log('----------------------------------');
 
   for (let i of res) {
-    allRoles.push({ ID: i.id, TITLE: i.title, SALARY: i.salary, DEPARTMENT: i.name });
+    allRoles.push({ ID: i.id, TITLE: i.title, SALARY: i.salary, DEPARTMENT: i.department_name });
   }
   console.table(allRoles);
   promptUser();
 };
 
 async function viewEmployees() {
-  const res = await query('SELECT employee.id, CONCAT(e.firstName, "", e. lastName) AS employeeName, role.title, role.salary, CONCAT(m.firstName, "", m.lastName) AS managerName FROM employee e LEFT JOIN employee m ON m.id = e.managerID INNER JOIN role ON e.roleId = role.id');
+  const res = await query("SELECT employee.id, CONCAT(employee.first_name,' ', employee.last_name) AS employee_name, role.title, department.department_name, role.salary, CONCAT(manager.first_name, ' ', manager.last_name) AS manager_name FROM employee INNER JOIN role ON employee.role_id = role.id INNER JOIN department ON role.department_id = department.id LEFT JOIN employee AS manager ON employee.manager_id = manager.id");
   const allEmployees = [];
   console.log('----------------------------------');
 
   for (let i of res) {
-    allEmployees.push({ ID: i.id, NAME: i.employeeName, ROLE: i.title, SALARY: i.salary, MANAGER: i.managerName });
+    allEmployees.push({ ID: i.id, NAME: i.employee_name, ROLE: i.title, SALARY: i.salary, MANAGER: i.manager_name });
   }
   console.table(allEmployees);
   promptUser();
@@ -112,12 +112,12 @@ async function viewEmployees() {
 
 async function addDepartment() {
   const answer = await inquirer.prompt({
-    name: 'departmentName',
+    name: 'department_name',
     type: 'input',
     message: 'Department Name:'
   });
 
-  await query('INSERT INTO department SET ?', { name: answer.departmentName });
+  await query('INSERT INTO department SET ?', { department_name: answer.department_name });
   console.log(chalk.bold.bgCyan('New Department Added'))
   viewDepartments();
 
@@ -141,13 +141,13 @@ async function addRole() {
       }
     },
     {
-      name: 'department',
+      name: 'department_name',
       input: 'list',
       message: 'Department:',
       choices: () => {
         const departments = [];
         for (let i of res) {
-          departments.push(i.name);
+          departments.push(i.department_name);
         }
         return departments;
       }
@@ -159,10 +159,10 @@ async function addRole() {
   let departmentId;
   for (let i of res) {
     if (i.name === answer.departments) {
-      departmentId = i.id;
+      department_id = i.id;
     }
   }
-  await query('INSERT INTO role SET ?', { title: answer.role, salary: answer.salary, departmentId: departmentId });
+  await query('INSERT INTO role SET ?', { title: answer.role, salary: answer.salary, department_id: department_id });
   console.log(chalk.bold.bgCyan('New Role Added'))
   viewRoles();
 };
@@ -171,12 +171,12 @@ async function addEmployee() {
   const resRole = await query('SELECT * FROM role');
   const answerRole = await inquirer.prompt([
     {
-      name: 'firstName',
+      name: 'first_name',
       type: 'input',
       message: 'First Name:'
     },
     {
-      name: 'lastName',
+      name: 'last_name',
       input: 'input',
       message: 'Last Name:',
     },
@@ -195,7 +195,7 @@ async function addEmployee() {
 
   ]);
 
-  const resEmployee = await  query('SELECT employee.id, CONCAT(employee.firstName, "", employee.lastName), AS employeeName, employee.roleId, employee.managerId, FROM employee');
+  const resEmployee = await  query('SELECT employee.id, CONCAT(employee.first_name, " ", employee.last_name), AS employee_name, employee.role_id, employee.manager_id, FROM employee');
   const answerEmployee = await inquirer.prompt({
     
       name: 'employee',
@@ -204,7 +204,7 @@ async function addEmployee() {
       choices: () => {
         const names = ['None'];
         for (let i of resEmployee) {
-          names.push(i.employeeName);
+          names.push(i.employee_name);
         }
         return names;
       }
@@ -217,7 +217,7 @@ async function addEmployee() {
     }
     let managerId;
     for (let i of resEmployee) {
-      if (i.employeeName === answerEmployee.employee) {
+      if (i.employee_name === answerEmployee.employee) {
         managerId = i.id;
       }
     }
@@ -274,42 +274,5 @@ async function addEmployee() {
     viewEmployees();
   }
   
-  
-
-
-
-inquirer
-  .prompt([
-    {
-      type: 'list',
-      name: 'shape',
-      message: 'How would you like your logo to take shape?',
-      choices: ['Triangle', 'Square', 'Circle'],
-    },
-    {
-      type: 'input',
-      name: 'textColor',
-      message: 'Please enter a color OR hexadecimal code for the text color of your logo.',
-    },
-    {
-      type: 'input',
-      name: 'shapeColor',
-      message: 'Please enter a color OR hexadecimal code for the background color of your logo.',
-    },
-    {
-      type: 'input',
-      name: 'text',
-      message: 'Please provide 3 characters you would like to display on your logo.',
-    },
-  ])
-  // catch to make sure user doesn't enter too many characters
-  .then((answers) => {
-    if (answers.text.length > 3) {
-      console.log("Must enter a value of no more than 3 characters");
-    } else {
-      writeToFile("logo.svg", answers);
-    }
-  });
 
 // call the prompt function to initiate questions
-promptUser();
